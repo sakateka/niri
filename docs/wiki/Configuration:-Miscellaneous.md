@@ -407,3 +407,11 @@ blur {
     saturation 1.5
 }
 ```
+
+### `window-strip`
+
+Enable this top-level flag to draw a two-logical-pixel indicator along the top
+of every output. Each segment represents a window on that output, ordered by
+workspace and then by column and tab. The focused window is blue and a window
+requesting attention is red, including windows on other workspaces. The strip
+stays at the screen edge when scrolling or entering fullscreen.

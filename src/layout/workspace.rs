@@ -232,7 +232,7 @@ impl<W: LayoutElement> Workspace<W> {
         );
 
         let view_size = output_size(&output);
-        let working_area = compute_working_area(&output);
+        let working_area = compute_working_area(&output, options.window_strip);
 
         let scrolling = ScrollingSpace::new(
             view_size,
@@ -393,6 +393,11 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn update_config(&mut self, base_options: Rc<Options>) {
+        if self.options.window_strip != base_options.window_strip {
+            if let Some(output) = self.output.as_ref() {
+                self.working_area = compute_working_area(output, base_options.window_strip);
+            }
+        }
         let scale = self.scale.fractional_scale();
         let options = Rc::new(
             Options::clone(&base_options)
@@ -527,7 +532,7 @@ impl<W: LayoutElement> Workspace<W> {
         let scale = output.current_scale();
         let transform = output.current_transform();
         let view_size = output_size(output);
-        let working_area = compute_working_area(output);
+        let working_area = compute_working_area(output, self.options.window_strip);
         self.set_view_size(scale, transform, view_size, working_area);
     }
 
@@ -2062,8 +2067,14 @@ impl<W: LayoutElement> Workspace<W> {
     }
 }
 
-pub(super) fn compute_working_area(output: &Output) -> Rectangle<f64, Logical> {
-    layer_map_for_output(output).non_exclusive_zone().to_f64()
+pub(super) fn compute_working_area(output: &Output, window_strip: bool) -> Rectangle<f64, Logical> {
+    let mut area = layer_map_for_output(output).non_exclusive_zone().to_f64();
+    if window_strip {
+        let inset = (super::window_strip::HEIGHT - area.loc.y).clamp(0., area.size.h.max(0.));
+        area.loc.y += inset;
+        area.size.h -= inset;
+    }
+    area
 }
 
 fn compute_workspace_shadow_config(

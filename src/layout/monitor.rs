@@ -74,6 +74,7 @@ pub struct Monitor<W: LayoutElement> {
     pub(super) insert_hint: Option<InsertHint>,
     /// Insert hint element for rendering.
     insert_hint_element: InsertHintElement,
+    window_strip: super::window_strip::WindowStrip,
     /// Location to render the insert hint element.
     insert_hint_render_loc: Option<InsertHintRenderLoc>,
     /// Whether the overview is open.
@@ -302,7 +303,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         let scale = output.current_scale();
         let view_size = output_size(&output);
-        let working_area = compute_working_area(&output);
+        let working_area = compute_working_area(&output, options.window_strip);
 
         // Prepare the workspaces: set output, empty first, empty last.
         let mut active_workspace_idx = 0;
@@ -337,6 +338,7 @@ impl<W: LayoutElement> Monitor<W> {
             active_workspace_idx,
             previous_workspace_id: None,
             insert_hint: None,
+            window_strip: Default::default(),
             insert_hint_element: InsertHintElement::new(options.layout.insert_hint),
             insert_hint_render_loc: None,
             overview_open: false,
@@ -1089,7 +1091,22 @@ impl<W: LayoutElement> Monitor<W> {
                 .any(|ws| ws.are_transitions_ongoing())
     }
 
+    pub fn render_window_strip(&self, push: &mut dyn FnMut(SolidColorRenderElement)) {
+        if self.options.window_strip {
+            self.window_strip.render(push);
+        }
+    }
+
     pub fn update_render_elements(&mut self, is_active: bool) {
+        if self.options.window_strip {
+            self.window_strip.update(
+                &self.workspaces,
+                self.active_workspace_idx,
+                is_active,
+                self.view_size.w,
+                self.scale.fractional_scale(),
+            );
+        }
         let mut insert_hint_ws_geo = None;
         let insert_hint_ws_id = self
             .insert_hint
@@ -1187,6 +1204,10 @@ impl<W: LayoutElement> Monitor<W> {
         let options =
             Rc::new(Options::clone(&base_options).with_merged_layout(self.layout_config.as_ref()));
 
+        if self.options.window_strip != options.window_strip {
+            self.working_area = compute_working_area(&self.output, options.window_strip);
+        }
+
         if self.options.layout.empty_workspace_above_first
             != options.layout.empty_workspace_above_first
             && self.workspaces.len() > 1
@@ -1232,7 +1253,7 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn update_output_size(&mut self) {
         self.scale = self.output.current_scale();
         self.view_size = output_size(&self.output);
-        self.working_area = compute_working_area(&self.output);
+        self.working_area = compute_working_area(&self.output, self.options.window_strip);
 
         for ws in &mut self.workspaces {
             ws.update_output_size();

@@ -85,6 +85,7 @@ pub mod scrolling;
 pub mod shadow;
 pub mod tab_indicator;
 pub mod tile;
+mod window_strip;
 pub mod workspace;
 
 #[cfg(test)]
@@ -393,6 +394,7 @@ enum MonitorSet<W: LayoutElement> {
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Options {
     pub layout: niri_config::Layout,
+    pub window_strip: bool,
     pub animations: niri_config::Animations,
     pub gestures: niri_config::Gestures,
     pub overview: niri_config::Overview,
@@ -654,6 +656,7 @@ impl Options {
     fn from_config(config: &Config) -> Self {
         Self {
             layout: config.layout.clone(),
+            window_strip: config.window_strip,
             animations: config.animations.clone(),
             gestures: config.gestures,
             overview: config.overview,

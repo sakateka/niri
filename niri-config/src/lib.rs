@@ -73,6 +73,7 @@ pub struct Config {
     pub spawn_at_startup: Vec<SpawnAtStartup>,
     pub spawn_sh_at_startup: Vec<SpawnShAtStartup>,
     pub layout: Layout,
+    pub window_strip: bool,
     pub prefer_no_csd: bool,
     pub cursor: Cursor,
     pub screenshot_path: ScreenshotPath,
@@ -234,6 +235,9 @@ where
                     config.borrow_mut().environment.0.extend(part.0);
                 }
 
+                "window-strip" => {
+                    config.borrow_mut().window_strip = Flag::decode_node(node, ctx)?.0
+                }
                 "prefer-no-csd" => {
                     config.borrow_mut().prefer_no_csd = Flag::decode_node(node, ctx)?.0
                 }
@@ -822,6 +826,7 @@ mod tests {
             spawn-at-startup "alacritty" "-e" "fish"
             spawn-sh-at-startup "qs -c ~/source/qs/MyAwesomeShell"
 
+            window-strip
             prefer-no-csd
 
             cursor {
@@ -1473,6 +1478,7 @@ mod tests {
                     a: 1.0,
                 },
             },
+            window_strip: true,
             prefer_no_csd: true,
             cursor: Cursor {
                 xcursor_theme: "breeze_cursors",

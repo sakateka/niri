@@ -4352,6 +4352,8 @@ impl Niri {
             }};
         }
 
+        mon.render_window_strip(&mut |elem| push(elem.into()));
+
         // The overlay layer elements go next.
         push_popups_from_layer!(Layer::Overlay);
         push_normal_from_layer!(Layer::Overlay);
