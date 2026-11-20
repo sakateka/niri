@@ -1382,15 +1382,17 @@ impl State {
             .layout
             .find_window_and_output_mut(toplevel.wl_surface())
         {
-            if mapped.recompute_window_rules(window_rules, self.niri.is_at_startup) {
-                drop(config);
-                let output = output.cloned();
+            let output = output.cloned();
+            let changed = mapped.recompute_window_rules(window_rules, self.niri.is_at_startup);
+            drop(config);
+            if changed {
                 let window = mapped.window.clone();
                 self.niri.layout.update_window(&window, None);
+            }
 
-                if let Some(output) = output {
-                    self.niri.queue_redraw(&output);
-                }
+            // A title or app-id change can update a visible label even with identical rules.
+            if let Some(output) = output {
+                self.niri.queue_redraw(&output);
             }
         }
     }

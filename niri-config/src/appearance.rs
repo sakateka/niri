@@ -457,6 +457,7 @@ impl MergeWith<WorkspaceShadowPart> for WorkspaceShadow {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TabIndicator {
+    pub stacked_titles: bool,
     pub off: bool,
     pub hide_when_single_tab: bool,
     pub place_within_column: bool,
@@ -477,6 +478,7 @@ pub struct TabIndicator {
 impl Default for TabIndicator {
     fn default() -> Self {
         Self {
+            stacked_titles: false,
             off: false,
             hide_when_single_tab: false,
             place_within_column: false,
@@ -507,6 +509,7 @@ impl MergeWith<TabIndicatorPart> for TabIndicator {
 
         merge!(
             (self, part),
+            stacked_titles,
             hide_when_single_tab,
             place_within_column,
             gap,
@@ -528,6 +531,8 @@ impl MergeWith<TabIndicatorPart> for TabIndicator {
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct TabIndicatorPart {
+    #[knuffel(child)]
+    pub stacked_titles: Option<Flag>,
     #[knuffel(child)]
     pub off: bool,
     #[knuffel(child)]

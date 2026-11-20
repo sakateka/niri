@@ -318,6 +318,10 @@ pub trait LayoutElement {
 
     fn is_child_of(&self, parent: &Self) -> bool;
 
+    fn tab_title(&self) -> String {
+        String::new()
+    }
+
     fn rules(&self) -> &ResolvedWindowRules;
 
     /// Runs periodic clean-up tasks.

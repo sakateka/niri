@@ -1,7 +1,9 @@
+use std::cell::RefCell;
 use std::iter::zip;
 use std::mem;
 
 use niri_config::{CornerRadius, Gradient, GradientRelativeTo, TabIndicatorPosition};
+use smithay::backend::renderer::element::Kind;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use super::tile::Tile;
@@ -10,20 +12,36 @@ use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
+use crate::render_helpers::texture::TextureRenderElement;
+use crate::render_helpers::title_texture::TitleTexture;
+use crate::render_helpers::RenderTarget;
 use crate::utils::{
     floor_logical_in_physical_max1, round_logical_in_physical, round_logical_in_physical_max1,
 };
 
 #[derive(Debug)]
 pub struct TabIndicator {
+    labels: Vec<TitleRow>,
+    working_height: f64,
     shader_locs: Vec<Point<f64, Logical>>,
     shaders: Vec<BorderRenderElement>,
     open_anim: Option<Animation>,
     config: niri_config::TabIndicator,
 }
 
+#[derive(Debug, Default)]
+struct TitleRow {
+    text: String,
+    rect: Rectangle<f64, Logical>,
+    scale: f64,
+    blocked: Option<niri_config::BlockOutFrom>,
+    texture: RefCell<TitleTexture>,
+}
+
 #[derive(Debug)]
 pub struct TabInfo {
+    label: Option<(String, Option<niri_config::BlockOutFrom>)>,
     /// Gradient for the tab indicator.
     pub gradient: Gradient,
     /// Tab geometry in the same coordinate system as the area.
@@ -32,21 +50,25 @@ pub struct TabInfo {
 
 niri_render_elements! {
     TabIndicatorRenderElement => {
+        Label = PrimaryGpuTextureRenderElement,
         Gradient = BorderRenderElement,
     }
 }
 
 impl TabIndicator {
-    pub fn new(config: niri_config::TabIndicator) -> Self {
+    pub fn new(config: niri_config::TabIndicator, working_height: f64) -> Self {
         Self {
             shader_locs: Vec::new(),
             shaders: Vec::new(),
+            labels: Vec::new(),
+            working_height,
             open_anim: None,
             config,
         }
     }
 
-    pub fn update_config(&mut self, config: niri_config::TabIndicator) {
+    pub fn update_config(&mut self, config: niri_config::TabIndicator, working_height: f64) {
+        self.working_height = working_height;
         self.config = config;
     }
 
@@ -72,7 +94,35 @@ impl TabIndicator {
         self.open_anim = Some(Animation::new(clock, 0., 1., 0., config));
     }
 
+    fn stack_height(&self, count: usize, scale: f64) -> f64 {
+        // Leave at least half the work area for the active window, even in large stacks.
+        round_logical_in_physical(scale, (24. * count as f64).min(self.working_height / 2.))
+    }
+
     fn tab_rects(
+        &self,
+        area: Rectangle<f64, Logical>,
+        count: usize,
+        scale: f64,
+    ) -> impl Iterator<Item = Rectangle<f64, Logical>> {
+        let stacked = self.config.stacked_titles;
+        let height = self.stack_height(count, scale);
+        let mut markers = self.marker_rects(area, count, scale);
+        (0..count).map(move |i| {
+            if !stacked {
+                return markers.next().unwrap();
+            }
+            let edge =
+                |i: usize| round_logical_in_physical(scale, height * i as f64 / count as f64);
+            let top = edge(i);
+            Rectangle::new(
+                Point::new(area.loc.x, (area.loc.y - height) + top),
+                Size::from((area.size.w, edge(i + 1) - top)),
+            )
+        })
+    }
+
+    fn marker_rects(
         &self,
         area: Rectangle<f64, Logical>,
         count: usize,
@@ -169,6 +219,7 @@ impl TabIndicator {
         scale: f64,
     ) {
         if !enabled || self.config.off {
+            self.labels.clear();
             self.shader_locs.clear();
             self.shaders.clear();
             return;
@@ -176,11 +227,16 @@ impl TabIndicator {
 
         let count = tab_count;
         if self.config.hide_when_single_tab && count == 1 {
+            self.labels.clear();
             self.shader_locs.clear();
             self.shaders.clear();
             return;
         }
 
+        self.labels.resize_with(
+            if self.config.stacked_titles { count } else { 0 },
+            Default::default,
+        );
         self.shaders.resize_with(count, Default::default);
         self.shader_locs.resize_with(count, Default::default);
 
@@ -195,6 +251,13 @@ impl TabIndicator {
             zip(tabs, rects),
         ) {
             *loc = rect.loc;
+            if let Some((text, blocked)) = tab.label {
+                let row = &mut self.labels[count - tabs_left];
+                row.text = text;
+                row.rect = rect;
+                row.blocked = blocked;
+                row.scale = scale;
+            }
 
             let mut gradient_area = match tab.gradient.relative_to {
                 GradientRelativeTo::Window => tab.geometry,
@@ -207,6 +270,15 @@ impl TabIndicator {
             if !is_active {
                 color_from *= 0.5;
                 color_to *= 0.5;
+            }
+
+            if self.config.stacked_titles {
+                // Keep white text readable over bright focus-ring colors.
+                for color in [&mut color_from, &mut color_to] {
+                    color.r *= 0.45;
+                    color.g *= 0.45;
+                    color.b *= 0.45;
+                }
             }
 
             let radius = if shared_rounded_corners && tab_count > 1 {
@@ -285,20 +357,59 @@ impl TabIndicator {
             return None;
         }
 
-        self.tab_rects(area, count, scale)
-            .enumerate()
+        let rects = self.tab_rects(area, count, scale);
+        if self.config.stacked_titles {
+            if point.x < area.loc.x || point.x >= area.loc.x + area.size.w || point.y >= area.loc.y {
+                return None;
+            }
+            // Compare against the shared row starts: adding a fractional row height back
+            // to its origin can otherwise make two rows claim the same boundary.
+            return rects.take_while(|rect| rect.loc.y <= point.y).count().checked_sub(1);
+        }
+
+        rects.enumerate()
             .find_map(|(idx, rect)| rect.contains(point).then_some(idx))
     }
 
     pub fn render(
         &self,
         renderer: &mut impl NiriRenderer,
+        target: RenderTarget,
         pos: Point<f64, Logical>,
         push: &mut dyn FnMut(TabIndicatorRenderElement),
     ) {
         let has_border_shader = BorderRenderElement::has_shader(renderer);
         if !has_border_shader {
             return;
+        }
+
+        for label in &self.labels {
+            if target.should_block_out(label.blocked)
+                || label.rect.size.w <= 12.
+                || label.rect.size.h <= 0.
+            {
+                continue;
+            }
+            let Some(texture) = label.texture.borrow_mut().get(
+                renderer.as_gles_renderer(),
+                &label.text,
+                label.scale,
+            ) else {
+                continue;
+            };
+            let mut size = texture.logical_size();
+            size.w = size.w.min(label.rect.size.w - 12.);
+            size.h = size.h.min(label.rect.size.h);
+            let loc = pos + label.rect.loc + Point::new(6., (label.rect.size.h - size.h) / 2.);
+            let elem = TextureRenderElement::from_texture_buffer(
+                texture,
+                loc,
+                1.,
+                Some(Rectangle::from_size(size)),
+                None,
+                Kind::Unspecified,
+            );
+            push(PrimaryGpuTextureRenderElement(elem).into());
         }
 
         for (shader, loc) in zip(&self.shaders, &self.shader_locs) {
@@ -310,13 +421,16 @@ impl TabIndicator {
     /// Extra size occupied by the tab indicator.
     pub fn extra_size(&self, tab_count: usize, scale: f64) -> Size<f64, Logical> {
         if self.config.off
-            || !self.config.place_within_column
+            || (!self.config.stacked_titles && !self.config.place_within_column)
             || (self.config.hide_when_single_tab && tab_count == 1)
         {
             return Size::from((0., 0.));
         }
 
         let round = |logical: f64| round_logical_in_physical(scale, logical);
+        if self.config.stacked_titles {
+            return Size::from((0., self.stack_height(tab_count, scale)));
+        }
         let width = round(self.config.width);
         let gap = round(self.config.gap);
 
@@ -332,6 +446,9 @@ impl TabIndicator {
 
     /// Offset of the tabbed content due to space occupied by the tab indicator.
     pub fn content_offset(&self, tab_count: usize, scale: f64) -> Point<f64, Logical> {
+        if self.config.stacked_titles {
+            return self.extra_size(tab_count, scale).to_point();
+        }
         match self.config.position {
             TabIndicatorPosition::Left | TabIndicatorPosition::Top => {
                 self.extra_size(tab_count, scale).to_point()
@@ -407,6 +524,40 @@ impl TabInfo {
 
         let geometry = Rectangle::new(position, tile.animated_tile_size());
 
-        TabInfo { gradient, geometry }
+        let label = config
+            .stacked_titles
+            .then(|| (tile.window().tab_title(), rules.block_out_from));
+        TabInfo {
+            gradient,
+            geometry,
+            label,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stacked_rows_share_reserved_space_and_hit_boundaries() {
+        let mut config = niri_config::TabIndicator::default();
+        config.stacked_titles = true;
+        config.hide_when_single_tab = true;
+        let indicator = TabIndicator::new(config, 100.);
+        let scale = 1.5;
+        assert_eq!(indicator.extra_size(1, scale).h, 0.);
+        let height = indicator.extra_size(3, scale).h;
+        assert_eq!(height, 50.);
+        let area = Rectangle::new(Point::from((12., height)), Size::from((200., 50.)));
+        let mut bottom = 0.;
+        for (i, row) in indicator.tab_rects(area, 3, scale).enumerate() {
+            assert!((row.loc.y - bottom).abs() < 1e-6);
+            assert_eq!(row.size.w, area.size.w);
+            assert_eq!(indicator.hit(area, 3, scale, row.loc), Some(i));
+            bottom = row.loc.y + row.size.h;
+        }
+        assert_eq!(bottom, area.loc.y);
+        assert_eq!(indicator.hit(area, 3, scale, area.loc), None);
     }
 }

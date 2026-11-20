@@ -465,7 +465,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .unwrap_or(self.options.layout.default_column_display);
         let will_tab = display_mode == ColumnDisplay::Tabbed;
         let extra_size = if will_tab {
-            TabIndicator::new(self.options.layout.tab_indicator).extra_size(1, self.scale)
+            TabIndicator::new(self.options.layout.tab_indicator, self.working_area.size.h)
+                .extra_size(1, self.scale)
         } else {
             Size::from((0., 0.))
         };
@@ -491,7 +492,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .unwrap_or(self.options.layout.default_column_display);
         let will_tab = display_mode == ColumnDisplay::Tabbed;
         let extra = if will_tab {
-            TabIndicator::new(self.options.layout.tab_indicator).extra_size(1, self.scale)
+            TabIndicator::new(self.options.layout.tab_indicator, self.working_area.size.h)
+                .extra_size(1, self.scale)
         } else {
             Size::from((0., 0.))
         };
@@ -2931,7 +2933,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 let pos = view_off + col_off + col_render_off;
                 let pos = pos.to_physical_precise_round(scale).to_logical(scale);
                 col.tab_indicator
-                    .render(ctx.renderer, pos, &mut |elem| push(elem.into()));
+                    .render(ctx.renderer, ctx.target, pos, &mut |elem| push(elem.into()));
             }
 
             for (tile, tile_off, visible) in col.tiles_in_render_order() {
@@ -3969,7 +3971,7 @@ impl<W: LayoutElement> Column<W> {
             is_pending_maximized: false,
             is_pending_fullscreen: false,
             display_mode,
-            tab_indicator: TabIndicator::new(options.layout.tab_indicator),
+            tab_indicator: TabIndicator::new(options.layout.tab_indicator, working_area.size.h),
             move_animation: None,
             view_size,
             working_area,
@@ -4051,7 +4053,7 @@ impl<W: LayoutElement> Column<W> {
         }
 
         self.tab_indicator
-            .update_config(options.layout.tab_indicator);
+            .update_config(options.layout.tab_indicator, working_area.size.h);
         self.view_size = view_size;
         self.working_area = working_area;
         self.parent_area = parent_area;

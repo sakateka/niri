@@ -1,11 +1,9 @@
 use std::cell::RefCell;
-use std::cmp::min;
 use std::collections::HashMap;
 use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
 
-use anyhow::ensure;
 use niri_config::{
     Action, Bind, Color, Config, CornerRadius, GradientInterpolation, Key, Modifiers, MruDirection,
     MruFilter, MruScope, Trigger,
@@ -36,6 +34,7 @@ use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
+use crate::render_helpers::title_texture::{TitleTexture, FONT};
 use crate::render_helpers::RenderCtx;
 use crate::utils::{
     baba_is_float_offset, output_size, round_logical_in_physical, to_physical_precise_round,
@@ -70,9 +69,6 @@ const PANEL_BORDER: i32 = 4;
 
 /// Backdrop color behind the previews.
 const BACKDROP_COLOR: Color32F = Color32F::new(0., 0., 0., 0.8);
-
-/// Font used to render the window titles.
-const FONT: &str = "sans 14px";
 
 /// Scopes in the order they are cycled through.
 ///
@@ -186,14 +182,6 @@ struct MoveAnimation {
 }
 
 type MruTexture = TextureBuffer<GlesTexture>;
-
-/// Cached title texture.
-#[derive(Debug, Default)]
-struct TitleTexture {
-    title: String,
-    scale: f64,
-    texture: Option<Option<MruTexture>>,
-}
 
 /// Cached scope panel textures.
 #[derive(Debug, Default)]
@@ -1629,76 +1617,6 @@ impl Inner {
 
         None
     }
-}
-
-impl TitleTexture {
-    fn get(&mut self, renderer: &mut GlesRenderer, title: &str, scale: f64) -> Option<MruTexture> {
-        if self.title != title || self.scale != scale {
-            self.texture = None;
-            self.title = title.to_owned();
-            self.scale = scale;
-        }
-
-        self.texture
-            .get_or_insert_with(|| generate_title_texture(renderer, title, scale).ok())
-            .clone()
-    }
-
-    fn get_stale(&self) -> Option<&MruTexture> {
-        if let Some(Some(texture)) = &self.texture {
-            Some(texture)
-        } else {
-            None
-        }
-    }
-}
-
-fn generate_title_texture(
-    renderer: &mut GlesRenderer,
-    title: &str,
-    scale: f64,
-) -> anyhow::Result<MruTexture> {
-    let _span = tracy_client::span!("mru::generate_title_texture");
-
-    let mut font = FontDescription::from_string(FONT);
-    font.set_absolute_size(to_physical_precise_round(scale, font.size()));
-
-    let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
-    let cr = cairo::Context::new(&surface)?;
-    let layout = pangocairo::functions::create_layout(&cr);
-    layout.context().set_round_glyph_positions(false);
-    // On Window CSD, line breaks are either stripped or replaced with the linebreak symbol anyway.
-    // No use rendering it as multiple lines.
-    layout.set_single_paragraph_mode(true);
-    layout.set_font_description(Some(&font));
-    layout.set_text(title);
-
-    let (width, height) = layout.pixel_size();
-    ensure!(width > 0 && height > 0);
-
-    // Guard against overly long window titles.
-    let width = min(width, 16383);
-    let height = min(height, 16383);
-
-    let surface = ImageSurface::create(cairo::Format::ARgb32, width, height)?;
-    let cr = cairo::Context::new(&surface)?;
-    cr.set_source_rgb(1., 1., 1.);
-    pangocairo::functions::show_layout(&cr, &layout);
-
-    drop(cr);
-    let data = surface.take_data().unwrap();
-    let buffer = TextureBuffer::from_memory(
-        renderer,
-        &data,
-        Fourcc::Argb8888,
-        (width, height),
-        false,
-        scale,
-        Transform::Normal,
-        Vec::new(),
-    )?;
-
-    Ok(buffer)
 }
 
 impl ScopePanel {

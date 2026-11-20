@@ -1362,6 +1362,7 @@ mod tests {
                     inactive_color: None,
                 },
                 tab_indicator: TabIndicator {
+                    stacked_titles: false,
                     off: false,
                     hide_when_single_tab: false,
                     place_within_column: false,

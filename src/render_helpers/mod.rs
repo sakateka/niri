@@ -49,6 +49,7 @@ pub mod snapshot;
 pub mod solid_color;
 pub mod surface;
 pub mod texture;
+pub(crate) mod title_texture;
 pub mod xray;
 
 /// A rendering context.

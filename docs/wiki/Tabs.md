@@ -33,3 +33,21 @@ This is especially useful for thicker tab indicators, or when you have very smal
 | Default | `place-within-column` |
 | --- | --- |
 | ![A screenshot showing 4 windows, with the middle column being focused. The tab indicator overflows onto the left column](https://github.com/user-attachments/assets/c2f51f50-3d87-403a-8beb-cbbe5ec5c880) | ![A screenshot showing 4 windows, with the middle column being focused. The tab indicator is contained within its respective column](https://github.com/user-attachments/assets/f1797cd0-d518-4be6-95b4-3540523c4370) |
+
+### Stacked titles
+
+To show one clickable title row per window above the active tab, enable
+`stacked-titles` in the tab indicator:
+
+```kdl
+layout {
+    tab-indicator {
+        stacked-titles
+        hide-when-single-tab
+    }
+}
+```
+
+The title rows share the column width and take up at most half the working
+area height. Existing tab navigation and active, inactive and urgent colors
+also apply to this style. Titles follow the window's screen capture rules.

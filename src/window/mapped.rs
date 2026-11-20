@@ -1354,6 +1354,17 @@ impl LayoutElement for Mapped {
         self.window.refresh();
     }
 
+    fn tab_title(&self) -> String {
+        with_toplevel_role(self.toplevel(), |role| {
+            role.title
+                .as_ref()
+                .filter(|s| !s.is_empty())
+                .or(role.app_id.as_ref())
+                .cloned()
+                .unwrap_or_default()
+        })
+    }
+
     fn rules(&self) -> &ResolvedWindowRules {
         &self.rules
     }
