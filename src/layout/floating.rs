@@ -273,7 +273,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
             let mut tile_view_rect = view_rect;
             tile_view_rect.loc -= offset + tile.render_offset();
-            tile.update_render_elements(is_active, tile_view_rect);
+            tile.update_render_elements(is_active, tile_view_rect, None);
         }
     }
 

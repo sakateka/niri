@@ -4100,16 +4100,43 @@ impl<W: LayoutElement> Column<W> {
     }
 
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
+        // Hide the tab indicator in fullscreen. If you have it configured to overlap the window,
+        // you don't want that to happen in fullscreen. Also, laying things out correctly when the
+        // tab indicator is within the column and the column goes fullscreen, would require too
+        // many changes to the code for too little benefit (it's mostly invisible anyway).
+        let enabled = self.display_mode == ColumnDisplay::Tabbed && self.sizing_mode().is_normal();
+        let config = self.tab_indicator.config();
+        let title_rows = if enabled && config.stacked_titles {
+            let height = self
+                .tab_indicator
+                .extra_size(self.tiles.len(), self.scale)
+                .h;
+            let area = self.tab_indicator_area();
+            (height > 0.).then(|| {
+                Rectangle::new(
+                    area.loc - Point::new(0., height),
+                    Size::from((area.size.w, height)),
+                )
+            })
+        } else {
+            None
+        };
+
         let active_idx = self.active_tile_idx;
         for (tile_idx, (tile, tile_off)) in self.tiles_mut().enumerate() {
             let is_active = is_active && tile_idx == active_idx;
 
             let mut tile_view_rect = view_rect;
             tile_view_rect.loc -= tile_off + tile.render_offset();
-            tile.update_render_elements(is_active, tile_view_rect);
+            let title_rows = title_rows
+                .filter(|_| tile_idx == active_idx)
+                .map(|mut rect| {
+                    rect.loc -= tile_off + tile.render_offset();
+                    rect
+                });
+            tile.update_render_elements(is_active, tile_view_rect, title_rows);
         }
 
-        let config = self.tab_indicator.config();
         let offsets = self.tile_offsets_iter(self.data.iter().copied());
         let tabs = zip(&self.tiles, offsets)
             .enumerate()
@@ -4119,12 +4146,6 @@ impl<W: LayoutElement> Column<W> {
                 let tile_pos = tile_off + tile.render_offset();
                 TabInfo::from_tile(tile, tile_pos, is_active, is_urgent, &config)
             });
-
-        // Hide the tab indicator in fullscreen. If you have it configured to overlap the window,
-        // you don't want that to happen in fullscreen. Also, laying things out correctly when the
-        // tab indicator is within the column and the column goes fullscreen, would require too
-        // many changes to the code for too little benefit (it's mostly invisible anyway).
-        let enabled = self.display_mode == ColumnDisplay::Tabbed && self.sizing_mode().is_normal();
 
         self.tab_indicator.update_render_elements(
             enabled,

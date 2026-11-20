@@ -46,6 +46,7 @@ pub struct Tile<W: LayoutElement> {
 
     /// The focus ring around the window.
     focus_ring: FocusRing,
+    focus_ring_offset: Point<f64, Logical>,
 
     /// The shadow around the window.
     shadow: Shadow,
@@ -192,6 +193,7 @@ impl<W: LayoutElement> Tile<W> {
             window,
             border: FocusRing::new(border_config.into()),
             focus_ring: FocusRing::new(focus_ring_config),
+            focus_ring_offset: Point::default(),
             shadow: Shadow::new(shadow_config),
             sizing_mode,
             fullscreen_backdrop: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
@@ -456,7 +458,12 @@ impl<W: LayoutElement> Tile<W> {
                 .is_some_and(|alpha| !alpha.anim.is_done())
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
+    pub fn update_render_elements(
+        &mut self,
+        is_active: bool,
+        view_rect: Rectangle<f64, Logical>,
+        title_rows: Option<Rectangle<f64, Logical>>,
+    ) {
         let rules = self.window.rules();
         let animated_tile_size = self.animated_tile_size();
         let expanded_progress = self.expanded_progress();
@@ -525,12 +532,17 @@ impl<W: LayoutElement> Tile<W> {
             false
         };
         let radius = radius.expanded_by(self.focus_ring.width() as f32);
+        let mut outline = Rectangle::from_size(animated_tile_size);
+        if let Some(rows) = title_rows {
+            outline = outline.merge(rows);
+        }
+        self.focus_ring_offset = outline.loc;
         self.focus_ring.update_render_elements(
-            animated_tile_size,
+            outline.size,
             is_active,
             !draw_focus_ring_with_background,
             self.window.is_urgent(),
-            view_rect,
+            Rectangle::new(view_rect.loc - outline.loc, view_rect.size),
             radius,
             self.scale,
             1. - expanded_progress as f32,
@@ -1292,8 +1304,11 @@ impl<W: LayoutElement> Tile<W> {
         // semitransparent bars in maximized state (which is a bit weird) and in the overview (also
         // a bit weird).
         if focus_ring && expanded_progress < 1. {
-            self.focus_ring
-                .render(ctx.renderer, location, &mut |elem| push(elem.into()));
+            self.focus_ring.render(
+                ctx.renderer,
+                location + self.focus_ring_offset,
+                &mut |elem| push(elem.into()),
+            );
         }
 
         if expanded_progress < 1. {
